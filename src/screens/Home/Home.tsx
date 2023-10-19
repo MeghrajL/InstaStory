@@ -3,6 +3,7 @@ import {
   Button,
   FlatList,
   Image,
+  LogBox,
   Modal,
   PanResponder,
   SafeAreaView,
@@ -10,16 +11,22 @@ import {
   Text,
   TouchableOpacity,
   View,
+  YellowBox,
 } from 'react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import useTheme from '@/hooks/useTheme';
 import { styles } from './style';
 import LinearGradient from 'react-native-linear-gradient';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
+LogBox.ignoreAllLogs();
+const IGNORED_LOGS = ['Animated'];
+
+LogBox.ignoreLogs(IGNORED_LOGS);
+// const alert = requireNativeComponent(RNBridgePlugin);
 
 const Home = () => {
   console.log('r');
-
+  const [seenUsers, setSeenUsers] = useState([]);
   const {
     Common,
     Fonts,
@@ -125,15 +132,48 @@ const Home = () => {
     },
   ]);
 
+  const seenStoryIds = useRef(new Set());
+
+  const [usersWithAllStoriesSeen, setUsersWithAllStoriesSeen] = useState(
+    new Set(),
+  );
+
+  // Function to check if all stories of a user are seen and add them to usersWithAllStoriesSeen
+  const checkAllStoriesSeen = userId => {
+    const user = content.find(item => item.id === userId);
+
+    if (user) {
+      const allStoriesSeen = user.stories.every(story =>
+        seenStoryIds.current.has(story.storyId),
+      );
+      console.log(allStoriesSeen);
+      if (allStoriesSeen) {
+        // usersWithAllStoriesSeen.add(userId);
+        const updatedSet = new Set(usersWithAllStoriesSeen);
+        updatedSet.add(userId);
+        setUsersWithAllStoriesSeen(updatedSet);
+      }
+    }
+    console.log('?', usersWithAllStoriesSeen);
+  };
+  // Function to mark a story as seen
+  const markStoryAsSeen = storyId => {
+    seenStoryIds.current.add(storyId);
+    console.log(seenStoryIds);
+  };
+
   const [isFullscreenVisible, setFullscreenVisible] = useState(false);
-  const [currentUser, setCurrentUser] = useState(0);
+  const currentUser = useRef(1);
   const FullscreenView = ({ isVisible, onClose, data }) => {
+    const [currUser, setCurrUser] = useState(currentUser.current);
     const [dragY] = useState(new Animated.Value(0));
 
     const panResponder = PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: Animated.event([null, { dy: dragY }]),
+      onPanResponderMove: Animated.event([null, { dy: dragY }], {
+        useNativeDriver: false,
+      }),
       onPanResponderRelease: (_, gestureState) => {
         if (gestureState.dy > 100) {
           // You can adjust the threshold for closing the modal
@@ -162,9 +202,29 @@ const Home = () => {
       outputRange: [0, 200],
     });
 
-    const currUserData = data.filter(item => item.id === currentUser);
-    console.log(currentUser, currUserData);
+    // console.log(currUser);
+    const currUserData = data.filter(item => item.id === currUser);
+    // console.log(currUserData);
+    const { username, stories, id } = currUserData[0];
+    const [currStory, setCurrStory] = useState(stories[0].storyId);
+    // useEffect(() => {
+    //   markStoryAsSeen(stories[0].storyId);
+    // }, [stories[0].storyId]);
+    // console.log(
+    //   currUser,
+    //   currUserData,
+    //   currStory,
+    //   username,
+    //   stories,
+    //   '>',
+    //   stories[0].storyId,
+    // );
+    const currStoryData = stories.filter(item => currStory === item.storyId);
 
+    // console.log(stories, currStoryData, currStory);
+    // const makeStorySeen=(storyId) =>{
+    //   storyId = true
+    // }
     return (
       <Modal transparent={true} animationType="slide" visible={isVisible}>
         <Animated.View
@@ -178,22 +238,97 @@ const Home = () => {
           {...panResponder.panHandlers}
         >
           <View style={styles.content}>
-            {currentUser > 0 && currentUser <= data.length && (
-              <Text style={{ color: 'black' }}>{currUserData[0].username}</Text>
+            {currUser > 0 && currUser <= data.length && (
+              <Text style={{ color: 'black' }}>{username}</Text>
             )}
             <Button title="Close" onPress={onClose} />
             <Button
               title="Next"
-              onPress={() =>
-                currentUser < data.length
-                  ? setCurrentUser(currentUser + 1)
-                  : onClose()
-              }
+              onPress={() => {
+                if (currUser < data.length) {
+                  setCurrUser(currUser + 1);
+                  const nextUser = data.filter(
+                    item => item.id === currUser + 1,
+                  );
+                  setCurrStory(nextUser[0].stories[0].storyId);
+                  markStoryAsSeen(nextUser[0].stories[0].storyId);
+                } else {
+                  onClose();
+                }
+              }}
             />
             <Button
               title="Prev"
               onPress={() => {
-                currentUser > 1 ? setCurrentUser(currentUser - 1) : onClose();
+                if (currUser > 1) {
+                  setCurrUser(currUser - 1);
+
+                  const prevUser = data.filter(
+                    item => item.id === currUser - 1,
+                  );
+                  setCurrStory(prevUser[0].stories[0].storyId);
+                  markStoryAsSeen(prevUser[0].stories[0].storyId);
+                  setContent({ ...content });
+                } else {
+                  onClose();
+                }
+              }}
+            />
+            <Image
+              style={{
+                width: 75,
+                height: 75,
+                borderRadius: 75 / 2,
+                alignSelf: 'center',
+                // borderColor: '#fff',
+                borderWidth: 3,
+              }}
+              source={{ uri: currStoryData[0].content }}
+            />
+            <Text>
+              {currStory}
+              {seenStoryIds.current}
+            </Text>
+            <Button
+              title="+"
+              onPress={() => {
+                if (currStory < stories[stories.length - 1].storyId) {
+                  setCurrStory(currStory + 1);
+                  markStoryAsSeen(currStory + 1);
+                } else if (currUser < data.length) {
+                  setCurrUser(currUser + 1);
+                  // setCurrStory(1);
+                  const nextUser = data.filter(
+                    item => item.id === currUser + 1,
+                  );
+                  setCurrStory(nextUser[0].stories[0].storyId);
+                  markStoryAsSeen(nextUser[0].stories[0].storyId);
+                } else {
+                  onClose();
+                }
+              }}
+            />
+            <Button
+              title="-"
+              onPress={() => {
+                if (currStory > stories[0].storyId) {
+                  setCurrStory(currStory - 1);
+                  markStoryAsSeen(currStory - 1);
+                } else if (currUser > 1) {
+                  setCurrUser(currUser - 1);
+                  const prevUser = data.filter(
+                    item => item.id === currUser - 1,
+                  );
+
+                  setCurrStory(
+                    prevUser[0].stories[prevUser[0].stories.length - 1].storyId,
+                  );
+                  markStoryAsSeen(
+                    prevUser[0].stories[prevUser[0].stories.length - 1].storyId,
+                  );
+                } else {
+                  onClose();
+                }
               }}
             />
           </View>
@@ -207,7 +342,9 @@ const Home = () => {
       <TouchableOpacity
         onPress={() => {
           setFullscreenVisible(true);
-          setCurrentUser(item.id);
+          // setCurrentUser(item.id);
+          currentUser.current = item.id;
+          markStoryAsSeen(item.stories[0].storyId);
         }}
         style={{
           height: 100,
@@ -252,7 +389,6 @@ const Home = () => {
       </TouchableOpacity>
     );
   };
-
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <FlatList
@@ -264,7 +400,10 @@ const Home = () => {
 
       <FullscreenView
         isVisible={isFullscreenVisible}
-        onClose={() => setFullscreenVisible(false)}
+        onClose={() => {
+          setFullscreenVisible(false);
+          checkAllStoriesSeen(1);
+        }}
         data={content}
       />
     </SafeAreaView>
